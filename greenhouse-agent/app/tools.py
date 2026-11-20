@@ -426,4 +426,96 @@ async def generate_plant_image(
     }
 
 
+async def generate_plant_video(
+    prompt: str, tool_context: ToolContext = None
+) -> dict:
+    """Generate a short botanical video (e.g. plant growth timelapse, care guide demonstration, or blooming flowers) using Google's Omni model (gemini-omni-flash-preview) in the global region.
+
+    The video is saved as an artifact in the Playground's Artifacts panel and uploaded directly to the public Cloud Storage bucket.
+
+    Args:
+        prompt: Description of the botanical plant, flower, or greenhouse scene to generate a video for (e.g. 'Timelapse of a Monstera Deliciosa leaf unfurling in warm greenhouse sunlight').
+        tool_context: ADK ToolContext to record the artifact for the Playground UI.
+
+    Returns:
+        A dictionary with the public HTTPS URL in Cloud Storage, artifact filename, and status.
+    """
+    import base64
+    import re
+    import uuid
+    from google import genai
+    from google.cloud import storage
+    from google.genai import types
+
+    # Initialize genai Client for Vertex AI in the global region
+    client = genai.Client(vertexai=True, project=PROJECT_ID, location="global")
+
+    # Generate short video using gemini-omni-flash-preview via Interactions API
+    interaction = client.interactions.create(
+        model="gemini-omni-flash-preview",
+        store=False,
+        input=[{"type": "text", "text": f"High quality, realistic botanical video of: {prompt}"}],
+        response_format=[
+            {
+                "type": "video",
+                "delivery": "inline",
+                "aspect_ratio": "16:9",
+                "resolution": "720p",
+                "duration": "5s",
+            }
+        ],
+        generation_config={"video_config": {"task": "text_to_video"}},
+        timeout=180.0,
+    )
+
+    video_bytes = None
+    if hasattr(interaction, "steps") and interaction.steps:
+        for step in interaction.steps:
+            if getattr(step, "type", None) == "model_output" and hasattr(step, "content"):
+                for c in step.content:
+                    if getattr(c, "type", None) == "video" and hasattr(c, "data") and c.data:
+                        raw_data = c.data
+                        video_bytes = (
+                            base64.b64decode(raw_data)
+                            if isinstance(raw_data, str)
+                            else raw_data
+                        )
+                        break
+            if video_bytes:
+                break
+
+    if not video_bytes:
+        return {"error": "Failed to generate video bytes from gemini-omni-flash-preview."}
+
+    # Generate a unique descriptive filename
+    slug = re.sub(r"[^a-zA-Z0-9]+", "_", prompt.lower()[:30]).strip("_")
+    filename = f"{slug}_{uuid.uuid4().hex[:6]}.mp4"
+
+    # (1) Save with tool_context.save_artifact so it shows up in Playground's Artifacts panel
+    artifact_saved = False
+    if tool_context is not None:
+        try:
+            part = types.Part.from_bytes(data=video_bytes, mime_type="video/mp4")
+            await tool_context.save_artifact(filename=filename, artifact=part)
+            artifact_saved = True
+        except Exception:
+            pass
+
+    # (2) Upload in-memory video bytes to public Cloud Storage bucket
+    storage_client = storage.Client(project=PROJECT_ID)
+    bucket = storage_client.bucket(BUCKET_NAME)
+    blob = bucket.blob(filename)
+    blob.upload_from_string(video_bytes, content_type="video/mp4")
+
+    public_url = f"https://storage.googleapis.com/{BUCKET_NAME}/{filename}"
+
+    return {
+        "filename": filename,
+        "public_url": public_url,
+        "artifact_saved": artifact_saved,
+        "message": f"Successfully generated botanical video and uploaded to {public_url}",
+    }
+
+
+
 

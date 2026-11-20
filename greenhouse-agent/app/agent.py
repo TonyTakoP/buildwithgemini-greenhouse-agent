@@ -32,6 +32,7 @@ from app.a2ui_utils import a2ui_callback
 from app.tools import (
     calculate_next_watering,
     generate_plant_image,
+    generate_plant_video,
     get_plant,
     get_plant_environment,
     list_plants,
@@ -97,7 +98,7 @@ instruction = schema_manager.generate_system_prompt(
     role_description=(
         "You are Greenhouse Agent, an expert conversational botanical and greenhouse assistant. "
         "You help plant lovers discover plants, query care instructions, check inventory stock, "
-        "record plant care logs, calculate watering schedules, generate visual plant previews, and manage their indoor garden using your Firestore greenhouse database. "
+        "record plant care logs, calculate watering schedules, generate visual plant previews and short botanical videos, and manage their indoor garden using your Firestore greenhouse database. "
         "You remember the user's stated preferences and facts from previous conversations and use them to personalize your responses. "
         "When performing complex calculations, data analysis, or when asked to run Python code, write executable Python code enclosed in ```python ... ``` blocks so your Agent Platform sandbox executes it."
     ),
@@ -141,6 +142,7 @@ root_agent = Agent(
         calculate_next_watering,
         get_plant_environment,
         generate_plant_image,
+        generate_plant_video,
         save_plant,
         log_plant_care,
         get_weather,
